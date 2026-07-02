@@ -1,0 +1,285 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: smart-library-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  service-discovery:
+    build:
+      context: .
+      dockerfile: service-discovery/Dockerfile
+    container_name: service-discovery
+    ports:
+      - "8761:8761"
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8761/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: auth-service/Dockerfile
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8081
+      SPRING_APPLICATION_NAME: auth-service
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/auth_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: admin
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: true
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration/schema
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka
+
+      APP_JWT_SECRET: BVvt2Q2OaZHShF3oCXuRVVTDEPkdu0e6KAvgOriLCA5TH9mDqPI94L81U24gyUT9vKyN0v5i2WbSPpiegonSQD
+      APP_JWT_EXPIRATION: 86400000
+      APP_INTERNAL_TOKEN: library-internal-token-123
+
+      SERVICES_USER_SERVICE_URL: http://user-service:8082
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    container_name: user-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8082
+      SPRING_APPLICATION_NAME: user-service
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/user_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: admin
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: true
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration/schema
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka
+
+      APP_JWT_SECRET: BVvt2Q2OaZHShF3oCXuRVVTDEPkdu0e6KAvgOriLCA5TH9mDqPI94L81U24gyUT9vKyN0v5i2WbSPpiegonSQD
+      APP_JWT_EXPIRATION: 86400000
+      APP_INTERNAL_TOKEN: library-internal-token-123
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  book-service:
+    build:
+      context: .
+      dockerfile: book-service/Dockerfile
+    container_name: book-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8083
+      SPRING_APPLICATION_NAME: book-service
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/book_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: admin
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: true
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration/schema
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka
+
+      APP_JWT_SECRET: BVvt2Q2OaZHShF3oCXuRVVTDEPkdu0e6KAvgOriLCA5TH9mDqPI94L81U24gyUT9vKyN0v5i2WbSPpiegonSQD
+      APP_JWT_EXPIRATION: 86400000
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: notification-service/Dockerfile
+    container_name: notification-service
+    ports:
+      - "8085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8085
+      SPRING_APPLICATION_NAME: notification-service
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/notification_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: admin
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: true
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration/schema
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka
+
+      APP_INTERNAL_TOKEN: library-internal-token-123
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  borrow-service:
+    build:
+      context: .
+      dockerfile: borrow-service/Dockerfile
+    container_name: borrow-service
+    ports:
+      - "8084:8084"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      service-discovery:
+        condition: service_healthy
+      book-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8084
+      SPRING_APPLICATION_NAME: borrow-service
+
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/borrow_service_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: admin
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_FLYWAY_ENABLED: true
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration/schema
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka
+
+      APP_JWT_SECRET: BVvt2Q2OaZHShF3oCXuRVVTDEPkdu0e6KAvgOriLCA5TH9mDqPI94L81U24gyUT9vKyN0v5i2WbSPpiegonSQD
+      APP_JWT_EXPIRATION: 86400000
+
+      APP_INTERNAL_TOKEN: library-internal-token-123
+      APP_BORROW_DEFAULT_BORROW_DAYS: 14
+      APP_BORROW_FINE_PER_DAY: 10.00
+
+      SERVICES_BOOK_SERVICE_URL: http://book-service:8083
+      SERVICES_NOTIFICATION_SERVICE_URL: http://notification-service:8085
+
+      SPRING_CLOUD_OPENFEIGN_OKHTTP_ENABLED: true
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      service-discovery:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      book-service:
+        condition: service_healthy
+      borrow-service:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: 8080
+      SPRING_APPLICATION_NAME: api-gateway
+
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka
+
+      APP_JWT_SECRET: BVvt2Q2OaZHShF3oCXuRVVTDEPkdu0e6KAvgOriLCA5TH9mDqPI94L81U24gyUT9vKyN0v5i2WbSPpiegonSQD
+      APP_JWT_EXPIRATION: 86400000
+    networks:
+      - smart-library-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+networks:
+  smart-library-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
