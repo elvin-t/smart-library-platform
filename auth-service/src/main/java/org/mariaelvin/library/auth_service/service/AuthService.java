@@ -1,7 +1,7 @@
 package org.mariaelvin.library.auth_service.service;
 
 import lombok.AllArgsConstructor;
-import org.mariaelvin.library.auth_service.config.UserClient;
+import org.mariaelvin.library.auth_service.client.UserClient;
 import org.mariaelvin.library.auth_service.dto.CreateUserRequest;
 import org.mariaelvin.library.auth_service.dto.LoginRequest;
 import org.mariaelvin.library.auth_service.dto.RegisterRequest;
@@ -24,11 +24,12 @@ import java.util.Set;
 @AllArgsConstructor
 public class AuthService {
 
-    private  final AuthUserRepository authUserRepository;
+    private final AuthUserRepository authUserRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final UserClient userClient;
+    private final UserServiceClientFacade userServiceClientFacade;
 
     @Transactional
     public void register(RegisterRequest request) {
@@ -37,16 +38,16 @@ public class AuthService {
             throw new UserAlreadyExistsException("User already exists");
         }
 
-        // ✅ Validate frontend role
-        String requestedRole = request.getRole().toUpperCase();
+        String requestedRole = request.getRole().trim().toUpperCase();
 
         if (!requestedRole.equals("MEMBER") && !requestedRole.equals("LIBRARIAN")) {
-            throw new InvalidUserRequestException("Invalid role selected");
+            throw new InvalidUserRequestException(
+                    "Invalid role selected. Allowed roles are MEMBER and LIBRARIAN."
+            );
         }
 
-        // ✅ Fetch role from Auth DB
         Role role = roleRepository.findByName(requestedRole)
-                .orElseThrow(() -> new RuntimeException("Role not found: " + requestedRole));
+                .orElseThrow(() -> new InvalidUserRequestException("Role not found: " + requestedRole));
 
         // ✅ Save credentials in Auth DB
         AuthUser authUser = AuthUser.builder()
@@ -65,8 +66,9 @@ public class AuthService {
         userRequest.setFullName(request.getFullName());
         userRequest.setPhone(request.getPhone());
 
-        userClient.createUser(userRequest);
+        userServiceClientFacade.createUser(userRequest);
     }
+
 
     public String login(LoginRequest request) {
 

@@ -31,7 +31,7 @@ import java.time.LocalDateTime;
 public class BorrowService {
 
     private final BorrowRecordRepository borrowRecordRepository;
-    private final BookClient bookClient;
+    private final BookServiceClientFacade bookServiceClientFacade;
     private final NotificationClient notificationClient;
 
     @Value("${app.internal.token}")
@@ -56,32 +56,45 @@ public class BorrowService {
             );
         }
 
-        BookResponse book = bookClient.getBookById(request.getBookId());
+        BookResponse book = bookServiceClientFacade.getBookById(request.getBookId());
 
         if (book == null || !book.isAvailable()) {
             throw new InvalidBorrowRequestException("Book is not available for borrowing");
         }
 
-        bookClient.borrowBookCopy(request.getBookId());
+        boolean inventoryDecreased = false;
 
-        LocalDateTime now = LocalDateTime.now();
+        try {
+            bookServiceClientFacade.borrowBookCopy(request.getBookId());
+            inventoryDecreased = true;
 
-        BorrowRecord record = BorrowRecord.builder()
-                .userId(request.getUserId())
-                .bookId(request.getBookId())
-                .borrowedAt(now)
-                .dueDate(now.plusDays(defaultBorrowDays))
-                .status(BorrowStatus.BORROWED)
-                .overdueDays(0)
-                .fineAmount(BigDecimal.ZERO)
-                .finePaid(false)
-                .build();
+            LocalDateTime now = LocalDateTime.now();
 
-        BorrowRecord savedRecord = borrowRecordRepository.save(record);
+            BorrowRecord record = BorrowRecord.builder()
+                    .userId(request.getUserId())
+                    .bookId(request.getBookId())
+                    .borrowedAt(now)
+                    .dueDate(now.plusDays(defaultBorrowDays))
+                    .status(BorrowStatus.BORROWED)
+                    .overdueDays(0)
+                    .fineAmount(BigDecimal.ZERO)
+                    .finePaid(false)
+                    .build();
 
-        sendBorrowConfirmation(savedRecord);
+            BorrowRecord savedRecord = borrowRecordRepository.save(record);
 
-        return toResponse(savedRecord);
+            sendBorrowConfirmation(savedRecord);
+
+            return toResponse(savedRecord);
+
+        } catch (Exception ex) {
+
+            if (inventoryDecreased) {
+                compensateBorrowInventory(request.getBookId());
+            }
+
+            throw ex;
+        }
     }
 
     @Transactional
@@ -93,28 +106,51 @@ public class BorrowService {
             throw new InvalidBorrowRequestException("Book is already returned");
         }
 
-        bookClient.returnBookCopy(record.getBookId());
+        boolean inventoryIncreased = false;
 
-        LocalDateTime returnedAt = LocalDateTime.now();
+        try {
+            bookServiceClientFacade.returnBookCopy(record.getBookId());
+            inventoryIncreased = true;
 
-        Integer overdueDays = calculateOverdueDays(record.getDueDate(), returnedAt);
-        BigDecimal fineAmount = calculateFineAmount(overdueDays);
+            LocalDateTime returnedAt = LocalDateTime.now();
 
-        record.markReturned(returnedAt, overdueDays, fineAmount);
+            Integer overdueDays = calculateOverdueDays(record.getDueDate(), returnedAt);
+            BigDecimal fineAmount = calculateFineAmount(overdueDays);
 
-        BorrowRecord updatedRecord = borrowRecordRepository.save(record);
+            record.markReturned(returnedAt, overdueDays, fineAmount);
 
-        log.info(
-                "Book returned successfully. borrowRecordId={}, overdueDays={}, fineAmount={}, finePaid={}",
-                updatedRecord.getId(),
-                updatedRecord.getOverdueDays(),
-                updatedRecord.getFineAmount(),
-                updatedRecord.isFinePaid()
-        );
+            BorrowRecord updatedRecord = borrowRecordRepository.save(record);
 
-        sendReturnConfirmation(updatedRecord);
+            sendReturnConfirmation(updatedRecord);
 
-        return toResponse(updatedRecord);
+            return toResponse(updatedRecord);
+
+        } catch (Exception ex) {
+
+            if (inventoryIncreased) {
+                compensateReturnInventory(record.getBookId());
+            }
+
+            throw ex;
+        }
+    }
+
+    private void compensateBorrowInventory(Long bookId) {
+        try {
+            log.warn("Compensating borrow inventory. Returning copy for bookId={}", bookId);
+            bookServiceClientFacade.returnBookCopy(bookId);
+        } catch (Exception ex) {
+            log.error("Borrow compensation failed. Manual reconciliation required. bookId={}", bookId, ex);
+        }
+    }
+
+    private void compensateReturnInventory(Long bookId) {
+        try {
+            log.warn("Compensating return inventory. Borrowing copy again for bookId={}", bookId);
+            bookServiceClientFacade.borrowBookCopy(bookId);
+        } catch (Exception ex) {
+            log.error("Return compensation failed. Manual reconciliation required. bookId={}", bookId, ex);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -177,9 +213,7 @@ public class BorrowService {
         BorrowRecord record = findBorrowRecordById(borrowRecordId);
 
         if (!record.isReturned()) {
-            throw new InvalidBorrowRequestException(
-                    "Fine can be paid only after the book is returned"
-            );
+            throw new InvalidBorrowRequestException("Fine can be paid only after the book is returned");
         }
 
         if (record.getFineAmount() == null ||
@@ -194,13 +228,6 @@ public class BorrowService {
         record.markFinePaid();
 
         BorrowRecord savedRecord = borrowRecordRepository.save(record);
-
-        log.info(
-                "Fine marked as paid. borrowRecordId={}, fineAmount={}, paidAt={}",
-                savedRecord.getId(),
-                savedRecord.getFineAmount(),
-                savedRecord.getFinePaidAt()
-        );
 
         return FineResponse.builder()
                 .borrowRecordId(savedRecord.getId())
@@ -274,7 +301,6 @@ public class BorrowService {
     }
 
     private void sendBorrowConfirmation(BorrowRecord record) {
-
         try {
             NotificationRequest notificationRequest = NotificationRequest.builder()
                     .userId(record.getUserId())
@@ -293,33 +319,24 @@ public class BorrowService {
             notificationClient.sendNotification(internalToken, notificationRequest);
 
         } catch (Exception ex) {
-            log.warn(
-                    "Failed to send borrow confirmation notification. borrowRecordId={}, reason={}",
+            log.warn("Failed to send borrow confirmation notification. borrowRecordId={}, reason={}",
                     record.getId(),
-                    ex.getMessage()
-            );
+                    ex.getMessage());
         }
     }
 
     private void sendReturnConfirmation(BorrowRecord record) {
-
         try {
-            String message = "You have successfully returned book ID "
-                    + record.getBookId()
-                    + ". Returned at: "
-                    + record.getReturnedAt()
-                    + ". Overdue days: "
-                    + record.getOverdueDays()
-                    + ". Fine amount: "
-                    + record.getFineAmount();
-
             NotificationRequest notificationRequest = NotificationRequest.builder()
                     .userId(record.getUserId())
                     .email(null)
                     .type("RETURN_CONFIRMATION")
                     .channel("EMAIL")
                     .subject("Book returned successfully")
-                    .message(message)
+                    .message("You have successfully returned book ID "
+                            + record.getBookId()
+                            + ". Fine amount: "
+                            + record.getFineAmount())
                     .bookId(record.getBookId())
                     .borrowRecordId(record.getId())
                     .build();
@@ -327,11 +344,9 @@ public class BorrowService {
             notificationClient.sendNotification(internalToken, notificationRequest);
 
         } catch (Exception ex) {
-            log.warn(
-                    "Failed to send return confirmation notification. borrowRecordId={}, reason={}",
+            log.warn("Failed to send return confirmation notification. borrowRecordId={}, reason={}",
                     record.getId(),
-                    ex.getMessage()
-            );
+                    ex.getMessage());
         }
     }
 }

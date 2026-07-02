@@ -25,6 +25,7 @@ spring:
               - "*"
             exposedHeaders:
               - Authorization
+              - X-Trace-Id
               - X-User-Id
               - X-User-Email
               - X-Roles

@@ -12,10 +12,18 @@ public enum ErrorCode {
     // ✅ Validation Errors
     VALIDATION_ERROR("GEN_001", "Validation failed"),
 
+    UNAUTHORIZED("SEC_001", "Authentication required"),
+    ACCESS_DENIED("SEC_002", "Access denied"),
+
+
     // ✅ System Errors
     INTERNAL_SERVER_ERROR("GEN_999", "Internal server error"),
 
-    INVALID_USER_REQUEST("AUTH_006", "Invalid user request");
+    INVALID_USER_REQUEST("AUTH_006", "Invalid user request"),
+    DATA_INTEGRITY_ERROR("GEN_002", "Data integrity violation"),
+
+    USER_SERVICE_ERROR("AUTH_007", "User service communication failed");
+
 
     private final String code;
     private final String defaultMessage;

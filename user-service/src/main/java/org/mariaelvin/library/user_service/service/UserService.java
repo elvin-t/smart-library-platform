@@ -20,26 +20,27 @@ public class UserService {
     @Transactional
     public UserResponse createUser(CreateUserRequest request) {
 
-        if (userRepository.existsById(request.getId())) {
-            throw new UserAlreadyExistsException("User already exists with id: " + request.getId());
-        }
+        return userRepository.findById(request.getId())
+                .map(this::toResponse)
+                .orElseGet(() -> {
 
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new UserAlreadyExistsException("User already exists with email: " + request.getEmail());
-        }
+                    if (userRepository.existsByEmail(request.getEmail())) {
+                        throw new UserAlreadyExistsException(
+                                "User already exists with email: " + request.getEmail()
+                        );
+                    }
 
-        User user = User.builder()
-                .id(request.getId())
-                .email(request.getEmail())
-                .fullName(request.getFullName())
-                .phone(request.getPhone())
-                .membershipType(MembershipType.STANDARD)
-                .membershipStatus(MembershipStatus.ACTIVE)
-                .build();
+                    User user = User.builder()
+                            .id(request.getId())
+                            .email(request.getEmail())
+                            .fullName(request.getFullName())
+                            .phone(request.getPhone())
+                            .membershipType(MembershipType.STANDARD)
+                            .membershipStatus(MembershipStatus.ACTIVE)
+                            .build();
 
-        User savedUser = userRepository.save(user);
-
-        return toResponse(savedUser);
+                    return toResponse(userRepository.save(user));
+                });
     }
 
     @Transactional(readOnly = true)

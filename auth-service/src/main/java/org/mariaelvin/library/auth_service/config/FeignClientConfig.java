@@ -1,4 +1,4 @@
-package org.mariaelvin.library.borrow_service.config;
+package org.mariaelvin.library.auth_service.config;
 
 import feign.Logger;
 import feign.RequestInterceptor;
@@ -26,11 +26,6 @@ public class FeignClientConfig {
 
             if (attributes != null) {
                 HttpServletRequest request = attributes.getRequest();
-
-                String authorizationHeader = request.getHeader("Authorization");
-                if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
-                    requestTemplate.header("Authorization", authorizationHeader);
-                }
 
                 String traceId = request.getHeader(TRACE_ID_HEADER);
                 if (traceId != null && !traceId.isBlank()) {
