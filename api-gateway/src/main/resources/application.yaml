@@ -53,6 +53,11 @@ spring:
           predicates:
             - Path=/api/borrow-records/**
 
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**,/api/internal/notifications/**
+
 eureka:
   client:
     service-url:

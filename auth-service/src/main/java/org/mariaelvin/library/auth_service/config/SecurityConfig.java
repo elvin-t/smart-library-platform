@@ -1,6 +1,5 @@
 package org.mariaelvin.library.auth_service.config;
 
-import jakarta.annotation.PostConstruct;
 import lombok.AllArgsConstructor;
 import org.mariaelvin.library.auth_service.security.JwtAuthenticationFilter;
 import org.mariaelvin.library.auth_service.security.RestAuthenticationEntryPoint;
@@ -30,7 +29,6 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
-
 
 
     @Bean

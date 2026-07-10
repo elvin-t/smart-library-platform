@@ -10,12 +10,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
-import org.mariaelvin.library.auth_service.dto.AuthResponse;
-import org.mariaelvin.library.auth_service.dto.LoginRequest;
-import org.mariaelvin.library.auth_service.dto.RegisterRequest;
+import org.mariaelvin.library.auth_service.dto.*;
 import org.mariaelvin.library.auth_service.service.AuthService;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,6 +25,29 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+
+
+    // ✅ ADMIN CREATE USER API - MEMBER / LIBRARIAN
+    @Operation(
+            summary = "Admin create user",
+            description = "Admin creates MEMBER or LIBRARIAN user with login access"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "User created successfully"),
+            @ApiResponse(responseCode = "400", description = "Validation error"),
+            @ApiResponse(responseCode = "403", description = "Access denied"),
+            @ApiResponse(responseCode = "409", description = "User already exists")
+    })
+    @PreAuthorize("hasAuthority('USER_WRITE')")
+    @PostMapping("/admin/users")
+    public ResponseEntity<AdminCreateUserResponse> createUserByAdmin(
+            @Valid @RequestBody AdminCreateUserRequest request) {
+
+        AdminCreateUserResponse response = authService.createUserByAdmin(request);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
 
     // ✅ REGISTER API
     @Operation(
@@ -62,6 +85,30 @@ public class AuthController {
         String token = authService.login(request);
 
         return ResponseEntity.ok(new AuthResponse(token));
+    }
+
+    @Operation(
+            summary = "Deactivate user login",
+            description = "Admin disables login access for a user"
+    )
+    @PreAuthorize("hasAuthority('USER_WRITE')")
+    @PatchMapping("/admin/users/{userId}/deactivate")
+    public ResponseEntity<AdminUserStatusResponse> deactivateUser(
+            @PathVariable Long userId) {
+
+        return ResponseEntity.ok(authService.deactivateUser(userId));
+    }
+
+    @Operation(
+            summary = "Activate user login",
+            description = "Admin enables login access for a user"
+    )
+    @PreAuthorize("hasAuthority('USER_WRITE')")
+    @PatchMapping("/admin/users/{userId}/activate")
+    public ResponseEntity<AdminUserStatusResponse> activateUser(
+            @PathVariable Long userId) {
+
+        return ResponseEntity.ok(authService.activateUser(userId));
     }
 
 }

@@ -2,9 +2,7 @@ package org.mariaelvin.library.auth_service.service;
 
 import lombok.AllArgsConstructor;
 import org.mariaelvin.library.auth_service.client.UserClient;
-import org.mariaelvin.library.auth_service.dto.CreateUserRequest;
-import org.mariaelvin.library.auth_service.dto.LoginRequest;
-import org.mariaelvin.library.auth_service.dto.RegisterRequest;
+import org.mariaelvin.library.auth_service.dto.*;
 import org.mariaelvin.library.auth_service.entity.AuthUser;
 import org.mariaelvin.library.auth_service.entity.Role;
 import org.mariaelvin.library.auth_service.exception.InvalidCredentialsException;
@@ -19,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @AllArgsConstructor
@@ -31,27 +30,30 @@ public class AuthService {
     private final UserClient userClient;
     private final UserServiceClientFacade userServiceClientFacade;
 
+
     @Transactional
-    public void register(RegisterRequest request) {
+    public AdminCreateUserResponse createUserByAdmin(AdminCreateUserRequest request) {
 
-        if (authUserRepository.existsByEmail(request.getEmail())) {
-            throw new UserAlreadyExistsException("User already exists");
-        }
-
+        String email = request.getEmail().trim().toLowerCase();
         String requestedRole = request.getRole().trim().toUpperCase();
+
+        if (authUserRepository.existsByEmail(email)) {
+            throw new UserAlreadyExistsException("User already exists with email: " + email);
+        }
 
         if (!requestedRole.equals("MEMBER") && !requestedRole.equals("LIBRARIAN")) {
             throw new InvalidUserRequestException(
-                    "Invalid role selected. Allowed roles are MEMBER and LIBRARIAN."
+                    "Admin can create only MEMBER or LIBRARIAN users"
             );
         }
 
         Role role = roleRepository.findByName(requestedRole)
-                .orElseThrow(() -> new InvalidUserRequestException("Role not found: " + requestedRole));
+                .orElseThrow(() ->
+                        new InvalidUserRequestException("Role not found: " + requestedRole)
+                );
 
-        // ✅ Save credentials in Auth DB
         AuthUser authUser = AuthUser.builder()
-                .email(request.getEmail())
+                .email(email)
                 .password(passwordEncoder.encode(request.getPassword()))
                 .isActive(true)
                 .roles(Set.of(role))
@@ -59,10 +61,53 @@ public class AuthService {
 
         AuthUser savedAuthUser = authUserRepository.save(authUser);
 
-        // ✅ Send profile data to User Service
         CreateUserRequest userRequest = new CreateUserRequest();
         userRequest.setId(savedAuthUser.getId());
-        userRequest.setEmail(request.getEmail());
+        userRequest.setEmail(email);
+        userRequest.setFullName(request.getFullName());
+        userRequest.setPhone(request.getPhone());
+
+        userServiceClientFacade.createUser(userRequest);
+
+        return AdminCreateUserResponse.builder()
+                .id(savedAuthUser.getId())
+                .email(savedAuthUser.getEmail())
+                .fullName(request.getFullName())
+                .phone(request.getPhone())
+                .roles(savedAuthUser.getRoles()
+                        .stream()
+                        .map(Role::getName)
+                        .collect(Collectors.toSet()))
+                .active(savedAuthUser.isActive())
+                .userProfileCreated(true)
+                .build();
+    }
+
+    @Transactional
+    public void register(RegisterRequest request) {
+
+        String email = request.getEmail().trim().toLowerCase();
+
+        if (authUserRepository.existsByEmail(email)) {
+            throw new UserAlreadyExistsException("User already exists with email: " + email);
+        }
+
+        // ✅ Public registration always creates MEMBER only
+        Role role = roleRepository.findByName("MEMBER")
+                .orElseThrow(() -> new InvalidUserRequestException("Role not found: MEMBER"));
+
+        AuthUser authUser = AuthUser.builder()
+                .email(email)
+                .password(passwordEncoder.encode(request.getPassword()))
+                .isActive(true)
+                .roles(Set.of(role))
+                .build();
+
+        AuthUser savedAuthUser = authUserRepository.save(authUser);
+
+        CreateUserRequest userRequest = new CreateUserRequest();
+        userRequest.setId(savedAuthUser.getId());
+        userRequest.setEmail(email);
         userRequest.setFullName(request.getFullName());
         userRequest.setPhone(request.getPhone());
 
@@ -75,10 +120,90 @@ public class AuthService {
         AuthUser user = authUserRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("User not found"));
 
+
+        if (!user.isActive()) {
+            throw new InvalidCredentialsException("User account is deactivated");
+        }
+
+
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw new InvalidCredentialsException("Invalid credentials");
         }
 
         return jwtTokenService.generateToken(user);
+    }
+
+    @Transactional
+    public AdminUserStatusResponse deactivateUser(Long userId) {
+
+        AuthUser authUser = authUserRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(
+                        "Auth user not found with id: " + userId
+                ));
+
+        if (!authUser.isActive()) {
+            return AdminUserStatusResponse.builder()
+                    .id(authUser.getId())
+                    .email(authUser.getEmail())
+                    .roles(authUser.getRoles()
+                            .stream()
+                            .map(Role::getName)
+                            .collect(Collectors.toSet()))
+                    .active(false)
+                    .message("User is already deactivated")
+                    .build();
+        }
+
+        authUser.setActive(false);
+
+        AuthUser savedUser = authUserRepository.save(authUser);
+
+        return AdminUserStatusResponse.builder()
+                .id(savedUser.getId())
+                .email(savedUser.getEmail())
+                .roles(savedUser.getRoles()
+                        .stream()
+                        .map(Role::getName)
+                        .collect(Collectors.toSet()))
+                .active(savedUser.isActive())
+                .message("User deactivated successfully")
+                .build();
+    }
+
+    @Transactional
+    public AdminUserStatusResponse activateUser(Long userId) {
+
+        AuthUser authUser = authUserRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(
+                        "Auth user not found with id: " + userId
+                ));
+
+        if (authUser.isActive()) {
+            return AdminUserStatusResponse.builder()
+                    .id(authUser.getId())
+                    .email(authUser.getEmail())
+                    .roles(authUser.getRoles()
+                            .stream()
+                            .map(Role::getName)
+                            .collect(Collectors.toSet()))
+                    .active(true)
+                    .message("User is already active")
+                    .build();
+        }
+
+        authUser.setActive(true);
+
+        AuthUser savedUser = authUserRepository.save(authUser);
+
+        return AdminUserStatusResponse.builder()
+                .id(savedUser.getId())
+                .email(savedUser.getEmail())
+                .roles(savedUser.getRoles()
+                        .stream()
+                        .map(Role::getName)
+                        .collect(Collectors.toSet()))
+                .active(savedUser.isActive())
+                .message("User activated successfully")
+                .build();
     }
 }
