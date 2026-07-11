@@ -15,13 +15,20 @@ public class NotificationResponse {
     private Long id;
     private Long userId;
     private String email;
+
     private NotificationType type;
     private NotificationChannel channel;
     private NotificationStatus status;
+
     private String subject;
     private String message;
+
     private Long bookId;
     private Long borrowRecordId;
+
+    private boolean read;
+    private LocalDateTime readAt;
+
     private LocalDateTime createdAt;
     private LocalDateTime sentAt;
 }

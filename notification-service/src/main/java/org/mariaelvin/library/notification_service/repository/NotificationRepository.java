@@ -7,6 +7,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
+
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 
     Page<Notification> findByUserId(Long userId, Pageable pageable);
@@ -14,4 +16,8 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     Page<Notification> findByType(NotificationType type, Pageable pageable);
 
     Page<Notification> findByStatus(NotificationStatus status, Pageable pageable);
+
+    List<Notification> findByUserIdAndReadFalse(Long userId);
+
+    long countByUserIdAndReadFalse(Long userId);
 }

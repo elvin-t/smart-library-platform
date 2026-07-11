@@ -74,8 +74,11 @@ public class RouteSecurityValidator {
             new RoutePermissionRule(HttpMethod.POST, "/api/borrow-records/**", "BORROW_WRITE"),
             new RoutePermissionRule(HttpMethod.PATCH, "/api/borrow-records/*/return", "RETURN_WRITE"),
 
-            new RoutePermissionRule(HttpMethod.GET, "/api/notifications/**", "BORROW_READ")
-    );
+            new RoutePermissionRule(HttpMethod.GET, "/api/notifications/**", "BORROW_READ"),
+
+            new RoutePermissionRule(HttpMethod.PATCH, "/api/notifications/**", "BORROW_READ")
+
+            );
 
     public boolean isPublic(ServerWebExchange exchange) {
 
