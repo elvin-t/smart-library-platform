@@ -16,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -204,6 +205,39 @@ public class AuthService {
                         .collect(Collectors.toSet()))
                 .active(savedUser.isActive())
                 .message("User activated successfully")
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public AdminAuthUserStatusResponse getAuthUserStatus(Long userId) {
+
+        AuthUser authUser = authUserRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(
+                        "Auth user not found with id: " + userId
+                ));
+
+        return toAdminAuthUserStatusResponse(authUser);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AdminAuthUserStatusResponse> getAllAuthUserStatuses() {
+
+        return authUserRepository.findAll()
+                .stream()
+                .map(this::toAdminAuthUserStatusResponse)
+                .collect(Collectors.toList());
+    }
+
+    private AdminAuthUserStatusResponse toAdminAuthUserStatusResponse(AuthUser authUser) {
+
+        return AdminAuthUserStatusResponse.builder()
+                .id(authUser.getId())
+                .email(authUser.getEmail())
+                .active(authUser.isActive())
+                .roles(authUser.getRoles()
+                        .stream()
+                        .map(Role::getName)
+                        .collect(Collectors.toSet()))
                 .build();
     }
 }

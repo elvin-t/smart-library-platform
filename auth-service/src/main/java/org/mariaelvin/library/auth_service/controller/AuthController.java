@@ -18,6 +18,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor   // ✅ Lombok injection
@@ -110,5 +112,29 @@ public class AuthController {
 
         return ResponseEntity.ok(authService.activateUser(userId));
     }
+
+    @Operation(
+    description = "Admin gets login active/inactive status for a user"
+            )
+    @PreAuthorize("hasAuthority('USER_READ')")
+    @GetMapping("/admin/users/{userId}/status")
+    public ResponseEntity<AdminAuthUserStatusResponse> getAuthUserStatus(
+            @PathVariable Long userId) {
+
+        return ResponseEntity.ok(authService.getAuthUserStatus(userId));
+    }
+
+    @Operation(
+            summary = "Get all auth user login statuses",
+            description = "Admin gets login active/inactive status for all users"
+    )
+    @PreAuthorize("hasAuthority('USER_READ')")
+    @GetMapping("/admin/users/statuses")
+    public ResponseEntity<List<AdminAuthUserStatusResponse>> getAllAuthUserStatuses() {
+
+        return ResponseEntity.ok(authService.getAllAuthUserStatuses());
+    }
+
+
 
 }
