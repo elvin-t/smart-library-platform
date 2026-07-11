@@ -242,6 +242,25 @@ services:
       retries: 10
       start_period: 40s
 
+  analytics-service:
+    build:
+      context: ./analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-service
+    ports:
+      - "8090:8090"
+    depends_on:
+      - service-discovery
+      - user-service
+      - book-service
+      - borrow-service
+      - notification-service
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://service-discovery:8761/eureka/
+    networks:
+      - smart-library-network
+
+
   api-gateway:
     build:
       context: .

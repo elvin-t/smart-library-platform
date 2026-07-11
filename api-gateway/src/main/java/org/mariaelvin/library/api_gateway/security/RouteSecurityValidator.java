@@ -75,8 +75,10 @@ public class RouteSecurityValidator {
             new RoutePermissionRule(HttpMethod.PATCH, "/api/borrow-records/*/return", "RETURN_WRITE"),
 
             new RoutePermissionRule(HttpMethod.GET, "/api/notifications/**", "BORROW_READ"),
+            new RoutePermissionRule(HttpMethod.PATCH, "/api/notifications/**", "BORROW_READ"),
 
-            new RoutePermissionRule(HttpMethod.PATCH, "/api/notifications/**", "BORROW_READ")
+            // Dashboard / Analytics
+            new RoutePermissionRule(HttpMethod.GET, "/api/dashboard/**", "BOOK_READ")
 
             );
 
