@@ -1,6 +1,6 @@
 # Smart Library Platform
 
-> Production-style **microservices-based Library Management System** built with Java 17, Spring Boot, Spring Cloud, JWT, RBAC, PostgreSQL, Flyway, OpenFeign, Resilience4j, Docker, and AWS-ready CI/CD.
+> Production-style **microservices-based Library Management System** built with Java 17, Spring Boot, Spring Cloud Gateway, Eureka, JWT, RBAC, PostgreSQL, Flyway, OpenFeign, Resilience4j, Docker, and AWS-ready CI/CD.
 
 ---
 
@@ -17,14 +17,23 @@
 - [Database Design](#database-design)
 - [Resilience and Fault Tolerance](#resilience-and-fault-tolerance)
 - [Centralized Logging and Trace ID](#centralized-logging-and-trace-id)
+- [Service-to-Service Communication](#service-to-service-communication)
+- [API Gateway Routing and Security](#api-gateway-routing-and-security)
+- [Analytics Service and Dashboard Summary](#analytics-service-and-dashboard-summary)
+- [API Documentation](#api-documentation)
+- [Local Setup](#local-setup)
+- [Run Order](#run-order)
+- [Maven Build Commands](#maven-build-commands)
 - [Dockerization](#dockerization)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [AWS Deployment Readiness](#aws-deployment-readiness)
 - [API Demo Guide](#api-demo-guide)
 - [Manager Demo Script](#manager-demo-script)
 - [Questions to Discuss with Manager](#questions-to-discuss-with-manager)
+- [Possible Manager Questions and Answers](#possible-manager-questions-and-answers)
 - [Completed Milestones](#completed-milestones)
 - [Future Roadmap](#future-roadmap)
+- [Final Summary](#final-summary)
 
 ---
 
@@ -32,7 +41,7 @@
 
 **Smart Library Platform** is a production-style backend platform for managing library operations using a microservices architecture.
 
-The platform includes authentication, user profile management, book catalog management, inventory management, borrow/return workflows, fine calculation, notification handling, API Gateway security, service discovery, trace logging, resilience, Dockerization, and CI/CD readiness.
+The platform includes authentication, user profile management, book catalog management, inventory management, borrow and return workflows, fine calculation, notification handling, dashboard analytics, API Gateway security, service discovery, trace logging, resilience, Dockerization, and CI/CD readiness.
 
 ### One-Line Summary
 
@@ -42,7 +51,7 @@ The platform includes authentication, user profile management, book catalog mana
 
 ## Business Problem
 
-Traditional library systems are often monolithic and difficult to scale, maintain, and deploy independently.
+Traditional library systems are often monolithic and difficult to scale, maintain, test, and deploy independently.
 
 This project solves that problem by splitting business capabilities into independent services:
 
@@ -54,6 +63,7 @@ Inventory management
 Borrow and return workflow
 Fine calculation
 Notification handling
+Dashboard analytics
 Gateway routing
 Service discovery
 Observability and tracing
@@ -82,310 +92,57 @@ Frontend / Postman
 | Eureka: 8761        |
 +---------------------+
         |
-        +-------------------+------------------+------------------+
-        |                   |                  |                  |
-        v                   v                  v                  v
-+---------------+   +---------------+   +---------------+   +----------------+
-| Auth Service  |   | User Service  |   | Book Service  |   | Borrow Service |
-| 8081          |   | 8082          |   | 8083          |   | 8084           |
-+---------------+   +---------------+   +---------------+   +----------------+
-        |                   |                  |                  |
-        v                   v                  v                  v
-   Auth DB              User DB            Book DB           Borrow DB
-                                                              |
-                                                              v
-                                                     +----------------------+
-                                                     | Notification Service |
-                                                     | 8085                 |
-                                                     +----------------------+
-                                                              |
-                                                              v
-                                                     Notification DB
+        +-------------------+------------------+------------------+--------------------+-----------------------+
+        |                   |                  |                  |                    |                       |
+        v                   v                  v                  v                    v                       v
++---------------+   +---------------+   +---------------+   +----------------+   +----------------------+   +-------------------+
+| Auth Service  |   | User Service  |   | Book Service  |   | Borrow Service |   | Notification Service |   | Analytics Service |
+| 8081          |   | 8082          |   | 8083          |   | 8084           |   | 8085                 |   | 8090              |
++---------------+   +---------------+   +---------------+   +----------------+   +----------------------+   +-------------------+
+        |                   |                  |                  |                    |
+        v                   v                  v                  v                    v
+   Auth DB              User DB            Book DB           Borrow DB          Notification DB
+```
+
+The architecture follows these microservice principles:
+
+```text
+Each service owns its domain responsibility
+Each service exposes REST APIs
+Each domain service owns its database
+API Gateway handles routing and route-level security
+JWT is used for authentication and authorization
+Internal APIs use X-Internal-Token for trusted service-to-service operations
+Analytics service aggregates dashboard data without owning a database
 ```
 
 ---
 
 ## Implemented Microservices
 
-### 1. Auth Service
-
-**Responsibility**
-
 ```text
-Authentication
-Authorization
-JWT generation
-Role management
-Permission management
-User registration
-Login
+discovery-server
+api-gateway
+auth-service
+user-service
+book-service
+borrow-service
+notification-service
+analytics-service
 ```
 
-**Key Features**
-
-```text
-Register user
-Login user
-Validate password using BCrypt
-Generate JWT token
-Return roles and permissions
-Assign MEMBER or LIBRARIAN roles
-Call User Service during registration
-```
-
-**Main APIs**
-
-```text
-POST /api/auth/register
-POST /api/auth/login
-```
-
-**Why Auth Service?**
-
-Auth Service centralizes authentication, role-permission management, and JWT generation. Other services do not store passwords or roles.
-
----
-
-### 2. User Service
-
-**Responsibility**
-
-```text
-User profile
-Membership details
-User contact information
-```
-
-**Key Features**
-
-```text
-Create user profile from Auth Service
-Get user by ID
-Get all users
-Update profile
-Update membership status
-```
-
-**Main APIs**
-
-```text
-POST  /api/internal/users
-GET   /api/users/{id}
-GET   /api/users
-PUT   /api/users/{id}
-PATCH /api/users/{id}/status
-```
-
-**Why User Service?**
-
-Auth Service manages credentials and roles, while User Service manages profile and membership information. This follows separation of concerns.
-
----
-
-### 3. Book Service
-
-**Responsibility**
-
-```text
-Book catalog
-Book search
-Book availability
-Inventory logic
-```
-
-**Key Features**
-
-```text
-Create book
-Update book
-Delete book
-Search books
-Get available books
-Manage inventory
-Add copies
-Remove copies
-Adjust available copies
-```
-
-**Main APIs**
-
-```text
-POST   /api/books
-GET    /api/books
-GET    /api/books/{id}
-GET    /api/books/search
-PUT    /api/books/{id}
-DELETE /api/books/{id}
-
-GET    /api/books/inventory/{bookId}
-PATCH  /api/books/inventory/{bookId}/add-copies
-PATCH  /api/books/inventory/{bookId}/remove-copies
-PATCH  /api/books/inventory/{bookId}/available-copies
-GET    /api/books/inventory/low-stock
-```
-
-**Inventory Decision**
-
-Inventory is currently kept inside Book Service because inventory logic is directly related to book copies:
-
-```text
-totalCopies
-availableCopies
-```
-
-A separate Inventory Service can be introduced later if inventory becomes more complex.
-
----
-
-### 4. Borrow Service
-
-**Responsibility**
-
-```text
-Borrow book
-Return book
-Borrow history
-Due date tracking
-Fine calculation
-```
-
-**Key Features**
-
-```text
-Borrow a book
-Return a book
-Calculate overdue fine
-Mark fine as paid
-Get borrow records
-Get borrow records by user
-Communicate with Book Service
-Send notifications after borrow/return
-```
-
-**Main APIs**
-
-```text
-POST  /api/borrow-records
-PATCH /api/borrow-records/{id}/return
-GET   /api/borrow-records
-GET   /api/borrow-records/{id}
-GET   /api/borrow-records/user/{userId}
-GET   /api/borrow-records/{id}/fine
-PATCH /api/borrow-records/{id}/fine/pay
-```
-
-**Fine Calculation**
-
-```text
-fine = overdueDays * finePerDay
-```
-
-Example:
-
-```text
-overdueDays = 3
-finePerDay = 10
-fineAmount = 30
-```
-
----
-
-### 5. Notification Service
-
-**Responsibility**
-
-```text
-User and library notifications
-```
-
-**Key Features**
-
-```text
-Borrow confirmation
-Return confirmation
-Due date reminder
-Overdue reminder
-Notification record storage
-Internal REST API
-```
-
-**Current Flow**
-
-```text
-Borrow Service → Notification Service using REST
-```
-
-**Future Flow**
-
-```text
-Borrow Service → Kafka → Notification Service
-```
-
-**Main API**
-
-```text
-POST /api/internal/notifications
-```
-
----
-
-### 6. API Gateway
-
-**Responsibility**
-
-```text
-Single entry point
-Route requests
-Validate JWT
-Route-level authorization
-Forward token
-Forward user headers
-Centralized CORS
-Trace ID generation
-```
-
-**Gateway Port**
-
-```text
-8080
-```
-
-**Routes**
-
-```text
-/api/auth/**           → Auth Service
-/api/users/**          → User Service
-/api/books/**          → Book Service
-/api/borrow-records/** → Borrow Service
-```
-
-**Why API Gateway?**
-
-API Gateway provides a single entry point for client applications and avoids exposing every microservice directly.
-
----
-
-### 7. Service Discovery
-
-**Responsibility**
-
-```text
-Register services
-Discover services dynamically
-Support load-balanced routing
-```
-
-**Technology**
-
-```text
-Netflix Eureka
-```
-
-**URL**
-
-```text
-http://localhost:8761
-```
+### Service Responsibilities
+
+| Service | Responsibility |
+|---|---|
+| discovery-server | Eureka service registry |
+| api-gateway | Central routing, JWT validation, permission validation, CORS, trace ID |
+| auth-service | Login, registration, JWT, roles, permissions, auth user active status |
+| user-service | User profile, phone, membership type/status, internal profile creation |
+| book-service | Book catalog, search, availability, inventory stock |
+| borrow-service | Borrow records, returns, overdue calculation, fine payment |
+| notification-service | Internal notification creation, notification read/unread APIs |
+| analytics-service | Dashboard summary aggregation from other services |
 
 ---
 
@@ -393,19 +150,24 @@ http://localhost:8761
 
 ```text
 Java 17
-Spring Boot 3.x
+Spring Boot 3.2.5
+Spring Cloud 2023.0.1
 Spring Cloud Gateway
 Spring Cloud OpenFeign
 Spring Cloud Netflix Eureka
 Spring Security
-JWT
+JWT - jjwt
 RBAC
 PostgreSQL
 Flyway
 Resilience4j
+Swagger / OpenAPI
+Lombok
+MapStruct
+Maven multi-module project
 Docker
 Docker Compose
-GitHub Actions
+GitHub Actions / Jenkins ready
 AWS ECR
 AWS ECS Fargate
 AWS RDS PostgreSQL
@@ -415,13 +177,35 @@ AWS CloudWatch
 
 ---
 
+## Current Service Ports
+
+```text
+discovery-server       8761
+api-gateway            8080
+auth-service           8081
+user-service           8082
+book-service           8083
+borrow-service         8084
+notification-service   8085
+analytics-service      8090
+```
+
+---
+
 ## Security Design
+
+The platform follows **defense-in-depth security**.
+
+```text
+API Gateway = first security layer
+Microservice = final service-level security layer
+```
 
 ### Authentication
 
 User login is handled by Auth Service.
 
-```text
+```http
 POST /api/auth/login
 ```
 
@@ -431,49 +215,38 @@ Auth Service validates:
 email
 password
 BCrypt password hash
+active login status
 ```
 
-Then Auth Service returns:
+Then Auth Service returns a JWT containing:
 
 ```text
-JWT token
+userId
+email / subject
 roles
 permissions
+expiration
 ```
-
----
 
 ### Authorization
 
 Authorization is permission-based using RBAC.
 
-Example permissions:
+Recommended permissions:
 
 ```text
+DASHBOARD_READ
+USER_READ
+USER_WRITE
 BOOK_READ
 BOOK_WRITE
+INVENTORY_READ
+INVENTORY_WRITE
 BORROW_READ
 BORROW_WRITE
 RETURN_READ
 RETURN_WRITE
-INVENTORY_READ
-INVENTORY_WRITE
-USER_READ
-USER_WRITE
 ```
-
----
-
-### Defense-in-Depth Security
-
-The platform validates JWT at both Gateway and service level.
-
-```text
-API Gateway = first security layer
-Microservice = final security layer
-```
-
-This prevents direct service access from bypassing Gateway security.
 
 ---
 
@@ -482,25 +255,26 @@ This prevents direct service access from bypassing Gateway security.
 ### MEMBER
 
 ```text
+DASHBOARD_READ
 BOOK_READ
-BORROW_WRITE
 BORROW_READ
-RETURN_WRITE
+BORROW_WRITE
 RETURN_READ
+RETURN_WRITE
 ```
 
 ### LIBRARIAN
 
 ```text
+DASHBOARD_READ
 BOOK_READ
 BOOK_WRITE
-BORROW_WRITE
-BORROW_READ
-RETURN_WRITE
-RETURN_READ
 INVENTORY_READ
 INVENTORY_WRITE
-USER_READ
+BORROW_READ
+BORROW_WRITE
+RETURN_READ
+RETURN_WRITE
 ```
 
 ### ADMIN
@@ -508,6 +282,172 @@ USER_READ
 ```text
 All permissions
 ```
+
+---
+
+## JWT Example
+
+```json
+{
+  "sub": "admin@library.com",
+  "userId": 1,
+  "roles": ["ADMIN"],
+  "permissions": [
+    "DASHBOARD_READ",
+    "USER_READ",
+    "USER_WRITE",
+    "BOOK_READ",
+    "BOOK_WRITE",
+    "INVENTORY_READ",
+    "INVENTORY_WRITE",
+    "BORROW_READ",
+    "BORROW_WRITE",
+    "RETURN_READ",
+    "RETURN_WRITE"
+  ]
+}
+```
+
+---
+
+## API Gateway Routing and Security
+
+API Gateway responsibilities:
+
+```text
+Single backend entry point
+Route matching
+JWT validation
+Route-level permission validation
+Trace ID creation and propagation
+Forwarding user context headers
+Centralized CORS
+Optional Swagger aggregation
+```
+
+### Gateway Routes
+
+```yaml
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**
+
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**,/api/internal/users/**
+
+        - id: book-service
+          uri: lb://book-service
+          predicates:
+            - Path=/api/books/**
+
+        - id: borrow-service
+          uri: lb://borrow-service
+          predicates:
+            - Path=/api/borrow-records/**
+
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/notifications/**,/api/internal/notifications/**
+
+        - id: analytics-service
+          uri: lb://analytics-service
+          predicates:
+            - Path=/api/dashboard/**
+```
+
+> Do not use `StripPrefix` for these routes because each service controller expects the full `/api/...` path.
+
+### Public Endpoints
+
+```text
+/api/auth/login
+/api/auth/register
+/actuator/health
+/swagger-ui/**
+/v3/api-docs/**
+```
+
+### Protected Admin Endpoints
+
+Do not make this public:
+
+```text
+/api/auth/admin/**
+```
+
+---
+
+## Suggested Gateway Permission Rules
+
+```java
+new RoutePermissionRule(HttpMethod.GET, "/api/dashboard/**", "DASHBOARD_READ"),
+
+new RoutePermissionRule(HttpMethod.GET, "/api/auth/admin/**", "USER_READ"),
+new RoutePermissionRule(HttpMethod.POST, "/api/auth/admin/**", "USER_WRITE"),
+new RoutePermissionRule(HttpMethod.PATCH, "/api/auth/admin/**", "USER_WRITE"),
+
+new RoutePermissionRule(HttpMethod.GET, "/api/users/**", "USER_READ"),
+new RoutePermissionRule(HttpMethod.POST, "/api/users/**", "USER_WRITE"),
+new RoutePermissionRule(HttpMethod.PUT, "/api/users/**", "USER_WRITE"),
+new RoutePermissionRule(HttpMethod.PATCH, "/api/users/**", "USER_WRITE"),
+
+new RoutePermissionRule(HttpMethod.GET, "/api/books/inventory/**", "INVENTORY_READ"),
+new RoutePermissionRule(HttpMethod.POST, "/api/books/inventory/**", "INVENTORY_WRITE"),
+new RoutePermissionRule(HttpMethod.PATCH, "/api/books/inventory/**", "INVENTORY_WRITE"),
+
+new RoutePermissionRule(HttpMethod.GET, "/api/books/**", "BOOK_READ"),
+new RoutePermissionRule(HttpMethod.POST, "/api/books/**", "BOOK_WRITE"),
+new RoutePermissionRule(HttpMethod.PUT, "/api/books/**", "BOOK_WRITE"),
+new RoutePermissionRule(HttpMethod.DELETE, "/api/books/**", "BOOK_WRITE"),
+
+new RoutePermissionRule(HttpMethod.GET, "/api/borrow-records/**", "BORROW_READ"),
+new RoutePermissionRule(HttpMethod.POST, "/api/borrow-records/**", "BORROW_WRITE"),
+new RoutePermissionRule(HttpMethod.PATCH, "/api/borrow-records/*/return", "RETURN_WRITE"),
+new RoutePermissionRule(HttpMethod.GET, "/api/borrow-records/*/fine", "BORROW_READ"),
+new RoutePermissionRule(HttpMethod.PATCH, "/api/borrow-records/*/fine/pay", "RETURN_WRITE"),
+
+new RoutePermissionRule(HttpMethod.GET, "/api/notifications/**", "BORROW_READ"),
+new RoutePermissionRule(HttpMethod.PATCH, "/api/notifications/**", "BORROW_READ")
+```
+
+---
+
+## Service-to-Service Communication
+
+Internal service calls use OpenFeign.
+
+Example from Auth Service to User Service:
+
+```java
+@FeignClient(
+        name = "user-service",
+        url = "${services.user-service.url}"
+)
+public interface UserClient {
+
+    @PostMapping("/api/internal/users")
+    void createUser(
+            @RequestHeader("X-Internal-Token") String internalToken,
+            @RequestBody CreateUserRequest request
+    );
+}
+```
+
+Internal APIs require:
+
+```text
+X-Internal-Token
+```
+
+This prevents public clients from directly calling trusted internal operations.
 
 ---
 
@@ -529,19 +469,34 @@ Feign call to User Service
 Create user profile in User DB
 ```
 
-Example request:
+Public self-registration creates only `MEMBER`.
+
+```http
+POST /api/auth/register
+```
 
 ```json
 {
   "email": "member1@library.com",
   "password": "member123",
   "fullName": "Member One",
-  "phone": "9876543210",
-  "role": "MEMBER"
+  "phone": "9876543210"
 }
 ```
 
----
+### Admin Create User Flow
+
+```http
+POST /api/auth/admin/users
+Authorization: Bearer <ADMIN_TOKEN>
+```
+
+Admin can create:
+
+```text
+MEMBER
+LIBRARIAN
+```
 
 ### Login Flow
 
@@ -552,30 +507,12 @@ API Gateway
   ↓
 Auth Service
   ↓
-Validate password
+Validate password and active status
   ↓
 Generate JWT
   ↓
 Return token, roles, permissions
 ```
-
-Example response:
-
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiIs...",
-  "roles": ["MEMBER"],
-  "permissions": [
-    "BOOK_READ",
-    "BORROW_WRITE",
-    "BORROW_READ",
-    "RETURN_WRITE",
-    "RETURN_READ"
-  ]
-}
-```
-
----
 
 ### Borrow Book Flow
 
@@ -586,27 +523,16 @@ API Gateway
   ↓
 Borrow Service
   ↓
-Check existing borrow record
+Check user and book request
   ↓
-Call Book Service to check availability
+Call Book Service to validate availability
   ↓
-Call Book Service to reduce available copies
+Reduce available copies
   ↓
 Save borrow record
   ↓
 Call Notification Service
 ```
-
-Example request:
-
-```json
-{
-  "userId": 1,
-  "bookId": 1
-}
-```
-
----
 
 ### Return Book Flow
 
@@ -619,7 +545,7 @@ Borrow Service
   ↓
 Find borrow record
   ↓
-Call Book Service to increase available copies
+Increase book available copies
   ↓
 Calculate fine if overdue
   ↓
@@ -632,7 +558,7 @@ Call Notification Service
 
 ## Database Design
 
-Each service owns its own database.
+Each domain service owns its own database.
 
 ```text
 auth_service_db
@@ -642,7 +568,7 @@ borrow_service_db
 notification_service_db
 ```
 
-This follows the database-per-service pattern.
+`analytics-service` owns no database.
 
 ### Auth DB
 
@@ -689,6 +615,7 @@ status
 overdue_days
 fine_amount
 fine_paid
+fine_paid_at
 ```
 
 ### Notification DB
@@ -705,6 +632,8 @@ channel
 status
 subject
 message
+read
+read_at
 ```
 
 ---
@@ -731,6 +660,7 @@ V1__create_books_table.sql
 V1__create_borrow_records_table.sql
 V2__add_fine_columns_to_borrow_records.sql
 V1__create_notifications_table.sql
+V2__add_notification_read_fields.sql
 ```
 
 ---
@@ -739,21 +669,22 @@ V1__create_notifications_table.sql
 
 ### OpenFeign Communication
 
-Services communicate using OpenFeign:
+```text
+Auth Service → User Service
+Borrow Service → Book Service
+Borrow Service → Notification Service
+Analytics Service → User/Book/Borrow/Notification Services
+```
+
+### Resilience4j
+
+Recommended and/or implemented for:
 
 ```text
 Auth Service → User Service
 Borrow Service → Book Service
 Borrow Service → Notification Service
-```
-
-### Resilience4j
-
-Implemented for:
-
-```text
-Borrow Service → Book Service
-Auth Service → User Service
+Analytics Service → downstream read APIs
 ```
 
 Features:
@@ -771,20 +702,26 @@ Read operations can retry safely:
 
 ```text
 GET /api/books/{id}
+GET /api/dashboard/summary downstream reads
 ```
 
-Mutation operations are not retried blindly:
+Mutation operations should not be retried blindly:
 
 ```text
 borrow copy
 return copy
+create notification
 ```
 
-Reason: retrying mutation APIs can create duplicate inventory updates.
+Reason:
+
+```text
+Retrying mutation APIs can create duplicate inventory updates or duplicate records.
+```
 
 ### Compensation Logic
 
-If Borrow Service decreases book inventory but fails to save borrow record, Borrow Service attempts compensation:
+If Borrow Service decreases book inventory but fails to save borrow record, Borrow Service should attempt compensation:
 
 ```text
 Return copy back to Book Service
@@ -803,11 +740,13 @@ Track one request across multiple services.
 ### Flow
 
 ```text
-API Gateway generates X-Trace-Id
+API Gateway generates or receives X-Trace-Id
 ↓
-Downstream services receive the same X-Trace-Id
+Gateway forwards X-Trace-Id
 ↓
-Each service logs traceId using MDC
+Downstream services store traceId in MDC
+↓
+Logs across services can be correlated
 ```
 
 Example:
@@ -820,23 +759,322 @@ This trace ID appears in logs of:
 
 ```text
 API Gateway
-Borrow Service
 Book Service
+Borrow Service
 Notification Service
+Analytics Service
 ```
 
-This makes debugging distributed requests easier.
+---
+
+## API Documentation
+
+Each service can expose Swagger/OpenAPI:
+
+```text
+http://localhost:<service-port>/swagger-ui.html
+http://localhost:<service-port>/v3/api-docs
+```
+
+Example:
+
+```text
+Auth Service:          http://localhost:8081/swagger-ui.html
+Book Service:          http://localhost:8083/swagger-ui.html
+Borrow Service:        http://localhost:8084/swagger-ui.html
+Notification Service:  http://localhost:8085/swagger-ui.html
+Analytics Service:     http://localhost:8090/swagger-ui.html
+```
+
+---
+
+## API Modules
+
+### Auth Service APIs
+
+```http
+POST  /api/auth/register
+POST  /api/auth/login
+POST  /api/auth/admin/users
+PATCH /api/auth/admin/users/{userId}/activate
+PATCH /api/auth/admin/users/{userId}/deactivate
+GET   /api/auth/admin/users/{userId}/status
+GET   /api/auth/admin/users/statuses
+```
+
+### User Service APIs
+
+```http
+POST  /api/internal/users
+GET   /api/users
+GET   /api/users/{id}
+PUT   /api/users/{id}
+PATCH /api/users/{id}/status
+```
+
+### Book Service APIs
+
+```http
+POST   /api/books
+GET    /api/books
+GET    /api/books/{id}
+GET    /api/books/search
+GET    /api/books/available
+PUT    /api/books/{id}
+DELETE /api/books/{id}
+```
+
+### Inventory APIs
+
+```http
+GET   /api/books/inventory/{bookId}
+GET   /api/books/inventory/low-stock
+PATCH /api/books/inventory/{bookId}/add
+PATCH /api/books/inventory/{bookId}/remove
+PATCH /api/books/inventory/{bookId}/available
+```
+
+> If your actual backend uses `/add-copies`, `/remove-copies`, or `/available-copies`, update the endpoint names here to match the controller exactly.
+
+### Borrow APIs
+
+```http
+POST  /api/borrow-records
+GET   /api/borrow-records
+GET   /api/borrow-records/{id}
+GET   /api/borrow-records/user/{userId}
+PATCH /api/borrow-records/{id}/return
+GET   /api/borrow-records/{id}/fine
+PATCH /api/borrow-records/{id}/fine/pay
+```
+
+### Notification APIs
+
+```http
+POST  /api/internal/notifications
+GET   /api/notifications
+GET   /api/notifications/{id}
+GET   /api/notifications/user/{userId}
+GET   /api/notifications/type/{type}
+GET   /api/notifications/status/{status}
+GET   /api/notifications/user/{userId}/unread-count
+PATCH /api/notifications/{id}/read
+PATCH /api/notifications/user/{userId}/read-all
+```
+
+### Analytics APIs
+
+```http
+GET /api/dashboard/summary
+```
+
+---
+
+## Analytics Service and Dashboard Summary
+
+The `analytics-service` is a stateless aggregation service.
+
+It does not need:
+
+```text
+Entity
+Repository
+Database
+Flyway
+JPA
+```
+
+It calls:
+
+```text
+user-service
+book-service
+borrow-service
+notification-service
+```
+
+using OpenFeign.
+
+### Dashboard Summary API
+
+```http
+GET /api/dashboard/summary
+Authorization: Bearer <TOKEN>
+```
+
+### Admin/Librarian Response
+
+```json
+{
+  "totalUsers": 4,
+  "totalBooks": 20,
+  "availableBooks": 15,
+  "lowStockBooks": 2,
+  "borrowRecords": 8,
+  "pendingFines": 1,
+  "notifications": 6,
+  "memberView": false
+}
+```
+
+### Member Response
+
+```json
+{
+  "totalUsers": 0,
+  "totalBooks": 20,
+  "availableBooks": 15,
+  "lowStockBooks": 0,
+  "borrowRecords": 2,
+  "pendingFines": 1,
+  "notifications": 3,
+  "memberView": true
+}
+```
+
+### Why Analytics Service?
+
+Before:
+
+```text
+Angular dashboard called multiple backend APIs
+```
+
+After:
+
+```text
+Angular calls only GET /api/dashboard/summary
+```
+
+Benefits:
+
+```text
+Faster dashboard loading
+Cleaner Angular DashboardService
+Centralized role-based count logic
+Better backend ownership of aggregation logic
+Easier future reporting changes
+```
+
+---
+
+## Error Code Standards
+
+Recommended common error response:
+
+```json
+{
+  "code": "AUTH_003",
+  "message": "User already exists with email: elvin@gmail.com",
+  "path": "/api/auth/register",
+  "traceId": "82487dfa-ad50-4759-805b-edeee0adf740",
+  "timestamp": "2026-07-10T19:49:42.2806275"
+}
+```
+
+Recommended prefixes:
+
+```text
+AUTH_           auth-service
+USER_           user-service
+BOOK_           book-service
+BORROW_         borrow-service
+NOTIFICATION_   notification-service
+ANALYTICS_      analytics-service
+SEC_            common security errors
+```
+
+Common security codes:
+
+```text
+SEC_001 Authentication required
+SEC_002 Access denied
+```
+
+Analytics error codes:
+
+```text
+ANALYTICS_001 Invalid analytics request
+ANALYTICS_002 Required user context is missing
+ANALYTICS_003 Unable to fetch data from user service
+ANALYTICS_004 Unable to fetch data from book service
+ANALYTICS_005 Unable to fetch data from borrow service
+ANALYTICS_006 Unable to fetch data from notification service
+ANALYTICS_007 Dashboard summary generation failed
+ANALYTICS_500 Internal analytics service error
+```
+
+---
+
+## Local Setup
+
+Prerequisites:
+
+```text
+Java 17
+Maven
+Docker optional
+PostgreSQL/MySQL depending on service database config
+```
+
+Clone repository:
+
+```bash
+git clone https://github.com/elvin-t/smart-library-platform.git
+cd smart-library-platform
+```
+
+---
+
+## Run Order
+
+Recommended run order:
+
+```text
+1. discovery-server
+2. api-gateway
+3. auth-service
+4. user-service
+5. book-service
+6. borrow-service
+7. notification-service
+8. analytics-service
+```
+
+If using Eureka, start discovery-server first.
+
+---
+
+## Maven Build Commands
+
+Build all modules:
+
+```bash
+mvn clean install -DskipTests
+```
+
+Build one module with dependencies:
+
+```bash
+mvn clean package -pl analytics-service -am -DskipTests
+```
+
+Run one module:
+
+```bash
+mvn spring-boot:run -pl analytics-service
+```
 
 ---
 
 ## Dockerization
 
-Every service has its own `Dockerfile`.
+Every backend service can have its own Dockerfile.
 
-Docker Compose runs:
+Docker Compose can run:
 
 ```text
-PostgreSQL
+PostgreSQL databases
 Service Discovery
 API Gateway
 Auth Service
@@ -844,15 +1082,16 @@ User Service
 Book Service
 Borrow Service
 Notification Service
+Analytics Service
 ```
 
-Local run command:
+Local run:
 
 ```bash
 docker compose up --build -d
 ```
 
-Useful Docker commands:
+Useful commands:
 
 ```bash
 docker compose ps
@@ -860,20 +1099,11 @@ docker compose logs -f
 docker compose down
 ```
 
-Benefits:
-
-```text
-Consistent local environment
-Easy onboarding
-Production-like setup
-Container-ready deployment
-```
-
 ---
 
 ## CI/CD Pipeline
 
-The planned CI/CD flow is:
+Recommended CI/CD flow:
 
 ```text
 GitHub
@@ -884,18 +1114,18 @@ Run tests
   ↓
 Build Docker image
   ↓
-Push to AWS ECR
+Push image to AWS ECR
   ↓
 Deploy to AWS ECS Fargate
 ```
 
-Recommended GitHub Actions workflow:
+Recommended GitHub Actions or Jenkins steps:
 
 ```text
 Checkout source code
 Setup Java 17
 Run Maven build and tests
-Authenticate to AWS using OIDC
+Authenticate to AWS using OIDC or credentials
 Login to Amazon ECR
 Build Docker image
 Push Docker image to ECR
@@ -907,7 +1137,7 @@ Deploy ECS service
 
 ## AWS Deployment Readiness
 
-The project is designed to deploy on:
+The backend is designed to deploy on:
 
 ```text
 Amazon ECR
@@ -932,6 +1162,14 @@ JWT secret
 Internal service token
 ```
 
+Angular frontend can be deployed separately using:
+
+```text
+S3 + CloudFront + Route 53
+```
+
+Angular frontend does not need Docker or Nginx when hosted through S3 and CloudFront.
+
 ---
 
 ## API Demo Guide
@@ -950,8 +1188,6 @@ Message:
 
 > Each service has a separate responsibility and database.
 
----
-
 #### 2. Show Eureka Dashboard
 
 Open:
@@ -968,20 +1204,17 @@ USER-SERVICE
 BOOK-SERVICE
 BORROW-SERVICE
 NOTIFICATION-SERVICE
+ANALYTICS-SERVICE
 API-GATEWAY
 ```
 
----
-
 #### 3. Login Demo
-
-Call:
 
 ```http
 POST http://localhost:8080/api/auth/login
 ```
 
-Show response:
+Show:
 
 ```text
 JWT token
@@ -989,28 +1222,33 @@ roles
 permissions
 ```
 
----
-
-#### 4. Book API Demo
-
-Call:
+#### 4. Dashboard Summary Demo
 
 ```http
-GET http://localhost:8080/api/books/1
+GET http://localhost:8080/api/dashboard/summary
+Authorization: Bearer <TOKEN>
 ```
 
 Explain:
 
-> Gateway validates token first, then Book Service validates again.
+> Angular dashboard now calls one backend summary API instead of multiple APIs.
 
----
+#### 5. Book API Demo
 
-#### 5. Borrow Book Demo
+```http
+GET http://localhost:8080/api/books/1
+Authorization: Bearer <TOKEN>
+```
 
-Call:
+Explain:
+
+> Gateway validates token and permissions before forwarding to Book Service.
+
+#### 6. Borrow Book Demo
 
 ```http
 POST http://localhost:8080/api/borrow-records
+Authorization: Bearer <TOKEN>
 ```
 
 Body:
@@ -1031,14 +1269,11 @@ Notification created
 Trace ID generated
 ```
 
----
-
-#### 6. Return Book Demo
-
-Call:
+#### 7. Return Book Demo
 
 ```http
 PATCH http://localhost:8080/api/borrow-records/1/return
+Authorization: Bearer <TOKEN>
 ```
 
 Show:
@@ -1049,45 +1284,29 @@ Fine calculated if overdue
 Notification sent
 ```
 
----
+#### 8. Notification Read/Unread Demo
 
-#### 7. Show Trace ID
+```http
+PATCH http://localhost:8080/api/notifications/1/read
+Authorization: Bearer <TOKEN>
+```
 
-Show the same trace ID in:
+#### 9. Show Trace ID
+
+Show same trace ID in:
 
 ```text
 API Gateway logs
 Borrow Service logs
 Book Service logs
 Notification Service logs
+Analytics Service logs
 ```
 
----
-
-#### 8. Show Docker
-
-Run:
+#### 10. Show Docker
 
 ```bash
 docker compose ps
-```
-
-Explain:
-
-> All services can run as containers locally.
-
----
-
-#### 9. Show GitHub Repository
-
-Show:
-
-```text
-Service folders
-Dockerfiles
-docker-compose.yml
-Flyway migrations
-GitHub workflow
 ```
 
 ---
@@ -1097,21 +1316,20 @@ GitHub workflow
 ```text
 This is my Smart Library Platform, implemented using microservices architecture.
 
-I have separated the system into Auth, User, Book, Borrow, Notification, API Gateway, and Service Discovery services.
+I separated the system into Auth, User, Book, Borrow, Notification, Analytics, API Gateway, and Service Discovery services.
 
-The Auth Service manages authentication, roles, permissions, and JWT generation.
-The User Service manages profile and membership data.
-The Book Service manages catalog and inventory.
-The Borrow Service manages borrow/return workflows and fine calculation.
-The Notification Service handles borrow and return notifications.
-The API Gateway is the single entry point and validates JWT, route permissions, and CORS.
+The Auth Service manages authentication, roles, permissions, user login status, and JWT generation.
+The User Service manages user profile and membership data.
+The Book Service manages book catalog and inventory.
+The Borrow Service manages borrow and return workflows and fine calculation.
+The Notification Service handles borrow, return, due date, and overdue notifications.
+The Analytics Service provides a centralized dashboard summary API by aggregating data from other services.
+The API Gateway is the single entry point and validates JWT, route permissions, CORS, and trace ID.
 Eureka is used for service discovery.
 
-Each service owns its own database and uses Flyway for schema migration.
-Security is implemented using JWT and RBAC.
-For better production readiness, I added Resilience4j for circuit breaker, retry, timeout, and fallback.
-I also added trace ID logging to track one request across multiple services.
-Finally, I dockerized the services and prepared the CI/CD pipeline for AWS ECS Fargate deployment.
+Each domain service owns its database and uses Flyway for schema migration.
+Security is implemented using JWT and RBAC permissions.
+For production readiness, I added Resilience4j patterns, trace ID logging, Dockerization, and CI/CD readiness for AWS ECS Fargate deployment.
 ```
 
 ---
@@ -1121,9 +1339,10 @@ Finally, I dockerized the services and prepared the CI/CD pipeline for AWS ECS F
 ### Architecture Feedback
 
 ```text
-Is this microservices separation aligned with our enterprise standards?
+Is this microservices separation aligned with enterprise standards?
 Should any service be merged or separated differently?
 Do our projects follow gateway-level security plus service-level security?
+Should analytics-service remain stateless or later use a read model database?
 ```
 
 ### Security Feedback
@@ -1132,6 +1351,7 @@ Do our projects follow gateway-level security plus service-level security?
 Is this JWT and RBAC approach suitable for enterprise-grade applications?
 Should OAuth2/OIDC integration be added in the next phase?
 Should internal APIs use mTLS or service-to-service tokens?
+Should DASHBOARD_READ be a separate permission or covered under BOOK_READ?
 ```
 
 ### Cloud and DevOps Feedback
@@ -1140,6 +1360,7 @@ Should internal APIs use mTLS or service-to-service tokens?
 For AWS deployment, should ECS Fargate or EKS be preferred?
 Should AWS Secrets Manager be used for JWT and DB credentials?
 Should Terraform scripts be created for infrastructure provisioning?
+Should each service have independent pipelines?
 ```
 
 ### Observability Feedback
@@ -1156,7 +1377,7 @@ Should dashboards be created for service health and latency?
 Should Kafka-based notification be implemented next?
 Should audit logging be added?
 Should role management APIs be added?
-Should admin dashboard APIs be implemented?
+Should analytics reporting APIs be expanded?
 ```
 
 ---
@@ -1175,6 +1396,12 @@ I used microservices to separate responsibilities, improve scalability, make ser
 This follows database-per-service architecture. Each service owns its data and avoids tight coupling between services.
 ```
 
+### Why does analytics-service not have a database?
+
+```text
+Analytics-service currently acts as a stateless aggregation service. It does not own business data. It calls domain services and prepares dashboard summary values. If historical reports or trends are needed later, it can be extended with Kafka events and its own read-optimized database.
+```
+
 ### Why validate JWT in both Gateway and services?
 
 ```text
@@ -1184,7 +1411,7 @@ Gateway validation blocks unauthorized requests early. Service-level validation 
 ### Why use API Gateway?
 
 ```text
-API Gateway gives a single entry point for clients and centralizes routing, CORS, JWT validation, and future rate limiting.
+API Gateway gives a single entry point for clients and centralizes routing, CORS, JWT validation, trace ID handling, and future rate limiting.
 ```
 
 ### Why use Eureka?
@@ -1235,17 +1462,23 @@ For full production, the next steps are AWS infrastructure provisioning, Secrets
 ✅ Book Service
 ✅ Borrow Service
 ✅ Notification Service
+✅ Analytics Service
 ✅ API Gateway
 ✅ Service Discovery
 ✅ JWT Security
 ✅ RBAC Permissions
+✅ DASHBOARD_READ permission
+✅ Admin user create/update/activate/deactivate flow
+✅ Public member self-registration
 ✅ Flyway Migrations
 ✅ Inventory Management
 ✅ Fine Calculation
 ✅ REST Notification
-✅ Resilience4j
+✅ Notification read/unread
+✅ Dashboard Summary API
+✅ Resilience4j readiness
 ✅ Centralized Trace ID Logging
-✅ Dockerization
+✅ Dockerization readiness
 ✅ CI/CD Pipeline Plan
 ✅ AWS ECS Deployment Plan
 ```
@@ -1256,15 +1489,19 @@ For full production, the next steps are AWS infrastructure provisioning, Secrets
 
 ```text
 1. Kafka/Event-Driven Notification
-2. Audit Logging
-3. Admin Role Management APIs
+2. Audit Logging Service
+3. Admin Role and Permission Management APIs
 4. OpenTelemetry Distributed Tracing
-5. CloudWatch Logging
-6. Terraform Infrastructure
+5. CloudWatch Logging and Metrics
+6. Terraform Infrastructure Provisioning
 7. AWS ECS Fargate Deployment
-8. Angular Frontend Integration
-9. Monitoring Dashboard
-10. Load Testing
+8. Redis caching for Dashboard Summary
+9. Analytics reporting and export APIs
+10. Monitoring dashboards
+11. Load testing
+12. Contract testing between services
+13. API versioning
+14. Swagger aggregation at API Gateway
 ```
 
 ---
@@ -1279,6 +1516,25 @@ Production-style Library Management Platform built with Java 17, Spring Boot, Sp
 
 ## Final Summary
 
-Smart Library Platform demonstrates a complete enterprise-style microservices system. It includes secure authentication, role-based authorization, API Gateway routing, service discovery, independent databases, Flyway migrations, book inventory, borrow/return workflow, fine calculation, notification handling, service resilience, centralized trace logging, Dockerization, and CI/CD readiness for AWS deployment.
+Smart Library Platform demonstrates a complete enterprise-style microservices system.
 
-This project shows practical implementation of modern backend engineering patterns using Java, Spring Boot, Spring Cloud, PostgreSQL, Docker, and AWS-ready deployment practices.
+It includes secure authentication, role-based authorization, API Gateway routing, service discovery, independent databases, Flyway migrations, book inventory, borrow and return workflow, fine calculation, notification handling, analytics dashboard aggregation, service resilience, centralized trace logging, Dockerization, and CI/CD readiness for AWS deployment.
+
+The latest backend includes the new `analytics-service`, which exposes:
+
+```http
+GET /api/dashboard/summary
+```
+
+This API improves frontend dashboard performance by moving aggregation logic from Angular into the backend.
+
+The project is suitable for:
+
+```text
+Local development
+Manager demo
+Interview discussion
+Portfolio showcase
+Cloud deployment extension
+Production-grade architecture practice
+```
