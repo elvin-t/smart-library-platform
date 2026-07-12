@@ -2,17 +2,18 @@ package org.mariaelvin.library.borrow_service.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.mariaelvin.library.borrow_service.client.BookClient;
-import org.mariaelvin.library.borrow_service.client.NotificationClient;
 import org.mariaelvin.library.borrow_service.dto.BookResponse;
 import org.mariaelvin.library.borrow_service.dto.BorrowRequest;
 import org.mariaelvin.library.borrow_service.dto.BorrowResponse;
 import org.mariaelvin.library.borrow_service.dto.FineResponse;
-import org.mariaelvin.library.borrow_service.dto.NotificationRequest;
 import org.mariaelvin.library.borrow_service.entity.BorrowRecord;
 import org.mariaelvin.library.borrow_service.entity.BorrowStatus;
+import org.mariaelvin.library.borrow_service.event.BookBorrowedEvent;
+import org.mariaelvin.library.borrow_service.event.BookReturnedEvent;
+import org.mariaelvin.library.borrow_service.event.FinePaidEvent;
 import org.mariaelvin.library.borrow_service.exception.BorrowRecordNotFoundException;
 import org.mariaelvin.library.borrow_service.exception.InvalidBorrowRequestException;
+import org.mariaelvin.library.borrow_service.kafka.LibraryEventProducer;
 import org.mariaelvin.library.borrow_service.repository.BorrowRecordRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -32,7 +33,7 @@ public class BorrowService {
 
     private final BorrowRecordRepository borrowRecordRepository;
     private final BookServiceClientFacade bookServiceClientFacade;
-    private final NotificationClient notificationClient;
+    private final LibraryEventProducer libraryEventProducer;
 
     @Value("${app.internal.token}")
     private String internalToken;
@@ -83,7 +84,19 @@ public class BorrowService {
 
             BorrowRecord savedRecord = borrowRecordRepository.save(record);
 
-            sendBorrowConfirmation(savedRecord);
+            //sendBorrowConfirmation(savedRecord);
+
+            publishBookBorrowedEvent(savedRecord);
+
+
+            log.info(
+                    "Borrow record created and Kafka event published. borrowRecordId={}, userId={}, bookId={}, traceId={}",
+                    savedRecord.getId(),
+                    savedRecord.getUserId(),
+                    savedRecord.getBookId(),
+                    getTraceId()
+            );
+
 
             return toResponse(savedRecord);
 
@@ -121,7 +134,14 @@ public class BorrowService {
 
             BorrowRecord updatedRecord = borrowRecordRepository.save(record);
 
-            sendReturnConfirmation(updatedRecord);
+            publishFinePaidEvent(updatedRecord);
+
+
+            log.info(
+                    "Borrow record returned and Kafka event published. borrowRecordId={}, traceId={}",
+                    updatedRecord.getId(),
+                    getTraceId()
+            );
 
             return toResponse(updatedRecord);
 
@@ -229,6 +249,14 @@ public class BorrowService {
 
         BorrowRecord savedRecord = borrowRecordRepository.save(record);
 
+        publishFinePaidEvent(savedRecord);
+
+        log.info(
+                "Fine marked as paid and Kafka event published. borrowRecordId={}, traceId={}",
+                savedRecord.getId(),
+                getTraceId()
+        );
+
         return FineResponse.builder()
                 .borrowRecordId(savedRecord.getId())
                 .userId(savedRecord.getUserId())
@@ -300,53 +328,65 @@ public class BorrowService {
                 .build();
     }
 
-    private void sendBorrowConfirmation(BorrowRecord record) {
-        try {
-            NotificationRequest notificationRequest = NotificationRequest.builder()
-                    .userId(record.getUserId())
-                    .email(null)
-                    .type("BORROW_CONFIRMATION")
-                    .channel("EMAIL")
-                    .subject("Book borrowed successfully")
-                    .message("You have successfully borrowed book ID "
-                            + record.getBookId()
-                            + ". Due date: "
-                            + record.getDueDate())
-                    .bookId(record.getBookId())
-                    .borrowRecordId(record.getId())
-                    .build();
 
-            notificationClient.sendNotification(internalToken, notificationRequest);
+    private void publishBookBorrowedEvent(BorrowRecord borrowRecord) {
+        BookBorrowedEvent event = new BookBorrowedEvent(
+                borrowRecord.getId(),
+                borrowRecord.getUserId(),
+                borrowRecord.getBookId(),
+                getUserEmailSafe(borrowRecord),
+                getBookTitleSafe(borrowRecord),
+                borrowRecord.getBorrowedAt(),
+                borrowRecord.getDueDate(),
+                getTraceId()
+        );
 
-        } catch (Exception ex) {
-            log.warn("Failed to send borrow confirmation notification. borrowRecordId={}, reason={}",
-                    record.getId(),
-                    ex.getMessage());
-        }
+        libraryEventProducer.publishBookBorrowed(event);
     }
 
-    private void sendReturnConfirmation(BorrowRecord record) {
-        try {
-            NotificationRequest notificationRequest = NotificationRequest.builder()
-                    .userId(record.getUserId())
-                    .email(null)
-                    .type("RETURN_CONFIRMATION")
-                    .channel("EMAIL")
-                    .subject("Book returned successfully")
-                    .message("You have successfully returned book ID "
-                            + record.getBookId()
-                            + ". Fine amount: "
-                            + record.getFineAmount())
-                    .bookId(record.getBookId())
-                    .borrowRecordId(record.getId())
-                    .build();
+    private void publishBookReturnedEvent(BorrowRecord borrowRecord) {
+        BookReturnedEvent event = new BookReturnedEvent(
+                borrowRecord.getId(),
+                borrowRecord.getUserId(),
+                borrowRecord.getBookId(),
+                getUserEmailSafe(borrowRecord),
+                getBookTitleSafe(borrowRecord),
+                borrowRecord.getReturnedAt(),
+                borrowRecord.getOverdueDays(),
+                borrowRecord.getFineAmount(),
+                borrowRecord.isFinePaid(),
+                getTraceId()
+        );
 
-            notificationClient.sendNotification(internalToken, notificationRequest);
-
-        } catch (Exception ex) {
-            log.warn("Failed to send return confirmation notification. borrowRecordId={}, reason={}",
-                    record.getId(),
-                    ex.getMessage());
-        }
+        libraryEventProducer.publishBookReturned(event);
     }
+
+    private void publishFinePaidEvent(BorrowRecord borrowRecord) {
+        FinePaidEvent event = new FinePaidEvent(
+                borrowRecord.getId(),
+                borrowRecord.getUserId(),
+                borrowRecord.getBookId(),
+                getUserEmailSafe(borrowRecord),
+                borrowRecord.getFineAmount(),
+                borrowRecord.getFinePaidAt(),
+                getTraceId()
+        );
+
+        libraryEventProducer.publishFinePaid(event);
+    }
+
+    private String getTraceId() {
+        return org.slf4j.MDC.get("traceId");
+    }
+
+    private String getUserEmailSafe(BorrowRecord borrowRecord) {
+        return null;
+    }
+
+    private String getBookTitleSafe(BorrowRecord borrowRecord) {
+        return null;
+    }
+
+
 }
+

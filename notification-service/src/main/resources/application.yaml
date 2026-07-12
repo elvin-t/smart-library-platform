@@ -5,6 +5,27 @@ spring:
   application:
     name: notification-service
 
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    consumer:
+      group-id: notification-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "org.mariaelvin.library.notification_service.event,org.mariaelvin.library.borrow_service.event,*"
+        spring.json.use.type.headers: false
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
+
+    listener:
+      ack-mode: record
+
   datasource:
     url: jdbc:postgresql://localhost:5432/notification_service_db
     username: postgres
@@ -33,6 +54,11 @@ eureka:
 app:
   internal:
     token: library-internal-token-123
+  kafka:
+    topics:
+      book-borrowed: book-borrowed-events
+      book-returned: book-returned-events
+      fine-paid: fine-paid-events
 
 springdoc:
   api-docs:

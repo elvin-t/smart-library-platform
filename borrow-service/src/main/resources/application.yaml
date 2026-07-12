@@ -12,6 +12,14 @@ spring:
             connectTimeout: 2000
             readTimeout: 5000
             loggerLevel: BASIC
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.add.type.headers: false
 
 
   application:
@@ -53,9 +61,6 @@ jwt:
 services:
   book-service:
     url: http://localhost:8083
-  notification-service:
-    url: http://localhost:8085
-
 
 resilience4j:
   circuitbreaker:
@@ -83,6 +88,11 @@ resilience4j:
 
 
 app:
+  kafka:
+    topics:
+      book-borrowed: book-borrowed-events
+      book-returned: book-returned-events
+      fine-paid: fine-paid-events
   internal:
     token: library-internal-token-123
   borrow:

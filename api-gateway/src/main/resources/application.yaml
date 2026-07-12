@@ -56,7 +56,7 @@ spring:
         - id: notification-service
           uri: lb://notification-service
           predicates:
-            - Path=/api/notifications/**,/api/internal/notifications/**
+            - Path=/api/notifications/**
 
         - id: analytics-service
           uri: lb://analytics-service
