@@ -11,6 +11,7 @@ import org.mariaelvin.library.analytics_service.dto.DashboardSummaryResponse;
 import org.mariaelvin.library.analytics_service.dto.PageResponse;
 import org.mariaelvin.library.analytics_service.exception.ErrorCode;
 import org.mariaelvin.library.analytics_service.exception.ExternalServiceException;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -33,24 +34,26 @@ public class AnalyticsService {
         boolean isAdmin = hasRole(rolesHeader, "ADMIN");
         boolean isLibrarian = hasRole(rolesHeader, "LIBRARIAN");
 
+        //cf1
         long totalUsers = isAdmin ? safeTotalUsers() : 0;
-
+        //cf2
         long totalBooks = safeTotalBooks();
+        //cf3
         long availableBooks = safeAvailableBooks();
-
+        //cf4
         long lowStockBooks = (isAdmin || isLibrarian)
                 ? safeLowStockBooks()
                 : 0;
 
         PageResponse<BorrowRecordResponse> borrowResponse =
                 safeBorrowRecords(isMember, userId);
-
+        //cf5
         long borrowRecords = borrowResponse != null
                 ? borrowResponse.getTotalElements()
                 : 0;
 
         long pendingFines = calculatePendingFines(borrowResponse);
-
+        //cf6
         long notifications = safeNotifications(isMember, userId);
 
         return DashboardSummaryResponse.builder()

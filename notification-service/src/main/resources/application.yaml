@@ -7,22 +7,16 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:9092
-
     consumer:
-      group-id: notification-service
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "org.mariaelvin.library.notification_service.event,org.mariaelvin.library.borrow_service.event,*"
-        spring.json.use.type.headers: false
+        group-id: notification-service
+        auto-offset-reset: earliest
+        enable-auto-commit: false
 
     producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      properties:
-        spring.json.add.type.headers: false
-
+        key-serializer: org.apache.kafka.common.serialization.StringSerializer
+        value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+        properties:
+          spring.json.add.type.headers: false
     listener:
       ack-mode: record
 

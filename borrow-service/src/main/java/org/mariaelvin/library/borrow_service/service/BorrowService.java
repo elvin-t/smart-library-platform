@@ -22,8 +22,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.time.Duration;
 import java.time.LocalDateTime;
 
 @Service
@@ -34,15 +32,10 @@ public class BorrowService {
     private final BorrowRecordRepository borrowRecordRepository;
     private final BookServiceClientFacade bookServiceClientFacade;
     private final LibraryEventProducer libraryEventProducer;
-
-    @Value("${app.internal.token}")
-    private String internalToken;
+    private final FineCalculationService fineCalculationService;
 
     @Value("${app.borrow.default-borrow-days:14}")
     private int defaultBorrowDays;
-
-    @Value("${app.borrow.fine-per-day:10.00}")
-    private BigDecimal finePerDay;
 
     @Transactional
     public BorrowResponse borrowBook(BorrowRequest request) {
@@ -54,6 +47,16 @@ public class BorrowService {
         )) {
             throw new InvalidBorrowRequestException(
                     "User already borrowed this book and has not returned it"
+            );
+        }
+
+        if (borrowRecordRepository.existsByUserIdAndBookIdAndStatus(
+                request.getUserId(),
+                request.getBookId(),
+                BorrowStatus.OVERDUE
+        )) {
+            throw new InvalidBorrowRequestException(
+                    "User already borrowed this book and it is overdue"
             );
         }
 
@@ -84,10 +87,7 @@ public class BorrowService {
 
             BorrowRecord savedRecord = borrowRecordRepository.save(record);
 
-            //sendBorrowConfirmation(savedRecord);
-
             publishBookBorrowedEvent(savedRecord);
-
 
             log.info(
                     "Borrow record created and Kafka event published. borrowRecordId={}, userId={}, bookId={}, traceId={}",
@@ -96,7 +96,6 @@ public class BorrowService {
                     savedRecord.getBookId(),
                     getTraceId()
             );
-
 
             return toResponse(savedRecord);
 
@@ -127,15 +126,17 @@ public class BorrowService {
 
             LocalDateTime returnedAt = LocalDateTime.now();
 
-            Integer overdueDays = calculateOverdueDays(record.getDueDate(), returnedAt);
-            BigDecimal fineAmount = calculateFineAmount(overdueDays);
+            fineCalculationService.calculateFinalFineOnReturn(record, returnedAt);
 
-            record.markReturned(returnedAt, overdueDays, fineAmount);
+            record.markReturned(
+                    returnedAt,
+                    record.getOverdueDays(),
+                    record.getFineAmount()
+            );
 
             BorrowRecord updatedRecord = borrowRecordRepository.save(record);
 
-            publishFinePaidEvent(updatedRecord);
-
+            publishBookReturnedEvent(updatedRecord);
 
             log.info(
                     "Borrow record returned and Kafka event published. borrowRecordId={}, traceId={}",
@@ -173,58 +174,54 @@ public class BorrowService {
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BorrowResponse getBorrowRecord(Long id) {
-        return toResponse(findBorrowRecordById(id));
+        BorrowRecord record = findBorrowRecordById(id);
+
+        fineCalculationService.updateFineIfRequired(record);
+
+        BorrowRecord savedRecord = borrowRecordRepository.save(record);
+
+        return toResponse(savedRecord);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<BorrowResponse> getBorrowRecordsByUser(Long userId, Pageable pageable) {
-        return borrowRecordRepository.findByUserId(userId, pageable)
-                .map(this::toResponse);
+        Page<BorrowRecord> records = borrowRecordRepository.findByUserId(userId, pageable);
+
+        updateFinesForPage(records);
+
+        return records.map(this::toResponse);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<BorrowResponse> getAllBorrowRecords(Pageable pageable) {
-        return borrowRecordRepository.findAll(pageable)
-                .map(this::toResponse);
+        Page<BorrowRecord> records = borrowRecordRepository.findAll(pageable);
+
+        updateFinesForPage(records);
+
+        return records.map(this::toResponse);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Page<BorrowResponse> getBorrowRecordsByStatus(BorrowStatus status, Pageable pageable) {
-        return borrowRecordRepository.findByStatus(status, pageable)
-                .map(this::toResponse);
+        Page<BorrowRecord> records = borrowRecordRepository.findByStatus(status, pageable);
+
+        updateFinesForPage(records);
+
+        return records.map(this::toResponse);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public FineResponse getFineDetails(Long borrowRecordId) {
 
         BorrowRecord record = findBorrowRecordById(borrowRecordId);
 
-        Integer overdueDays;
-        BigDecimal fineAmount;
+        fineCalculationService.updateFineIfRequired(record);
 
-        if (record.isReturned()) {
-            overdueDays = record.getOverdueDays();
-            fineAmount = record.getFineAmount();
-        } else {
-            overdueDays = calculateOverdueDays(record.getDueDate(), LocalDateTime.now());
-            fineAmount = calculateFineAmount(overdueDays);
-        }
+        BorrowRecord savedRecord = borrowRecordRepository.save(record);
 
-        return FineResponse.builder()
-                .borrowRecordId(record.getId())
-                .userId(record.getUserId())
-                .bookId(record.getBookId())
-                .borrowedAt(record.getBorrowedAt())
-                .dueDate(record.getDueDate())
-                .returnedAt(record.getReturnedAt())
-                .overdueDays(overdueDays)
-                .finePerDay(finePerDay)
-                .fineAmount(fineAmount)
-                .finePaid(record.isFinePaid())
-                .finePaidAt(record.getFinePaidAt())
-                .build();
+        return buildFineResponse(savedRecord);
     }
 
     @Transactional
@@ -237,7 +234,7 @@ public class BorrowService {
         }
 
         if (record.getFineAmount() == null ||
-                record.getFineAmount().compareTo(BigDecimal.ZERO) == 0) {
+                record.getFineAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new InvalidBorrowRequestException("No fine is pending for this borrow record");
         }
 
@@ -257,18 +254,27 @@ public class BorrowService {
                 getTraceId()
         );
 
+        return buildFineResponse(savedRecord);
+    }
+
+    private void updateFinesForPage(Page<BorrowRecord> records) {
+        records.getContent().forEach(fineCalculationService::updateFineIfRequired);
+        borrowRecordRepository.saveAll(records.getContent());
+    }
+
+    private FineResponse buildFineResponse(BorrowRecord record) {
         return FineResponse.builder()
-                .borrowRecordId(savedRecord.getId())
-                .userId(savedRecord.getUserId())
-                .bookId(savedRecord.getBookId())
-                .borrowedAt(savedRecord.getBorrowedAt())
-                .dueDate(savedRecord.getDueDate())
-                .returnedAt(savedRecord.getReturnedAt())
-                .overdueDays(savedRecord.getOverdueDays())
-                .finePerDay(finePerDay)
-                .fineAmount(savedRecord.getFineAmount())
-                .finePaid(savedRecord.isFinePaid())
-                .finePaidAt(savedRecord.getFinePaidAt())
+                .borrowRecordId(record.getId())
+                .userId(record.getUserId())
+                .bookId(record.getBookId())
+                .borrowedAt(record.getBorrowedAt())
+                .dueDate(record.getDueDate())
+                .returnedAt(record.getReturnedAt())
+                .overdueDays(record.getOverdueDays())
+                .finePerDay(fineCalculationService.getFinePerDay())
+                .fineAmount(record.getFineAmount())
+                .finePaid(record.isFinePaid())
+                .finePaidAt(record.getFinePaidAt())
                 .build();
     }
 
@@ -279,37 +285,7 @@ public class BorrowService {
                 ));
     }
 
-    private Integer calculateOverdueDays(LocalDateTime dueDate, LocalDateTime actualDateTime) {
-
-        if (dueDate == null || actualDateTime == null || !actualDateTime.isAfter(dueDate)) {
-            return 0;
-        }
-
-        Duration overdueDuration = Duration.between(dueDate, actualDateTime);
-
-        long seconds = overdueDuration.getSeconds();
-        long days = seconds / 86400;
-
-        if (seconds % 86400 != 0) {
-            days++;
-        }
-
-        return Math.toIntExact(days);
-    }
-
-    private BigDecimal calculateFineAmount(Integer overdueDays) {
-
-        if (overdueDays == null || overdueDays <= 0) {
-            return BigDecimal.ZERO;
-        }
-
-        return finePerDay
-                .multiply(BigDecimal.valueOf(overdueDays))
-                .setScale(2, RoundingMode.HALF_UP);
-    }
-
     private BorrowResponse toResponse(BorrowRecord record) {
-
         return BorrowResponse.builder()
                 .id(record.getId())
                 .userId(record.getUserId())
@@ -327,7 +303,6 @@ public class BorrowService {
                 .updatedAt(record.getUpdatedAt())
                 .build();
     }
-
 
     private void publishBookBorrowedEvent(BorrowRecord borrowRecord) {
         BookBorrowedEvent event = new BookBorrowedEvent(
@@ -386,7 +361,4 @@ public class BorrowService {
     private String getBookTitleSafe(BorrowRecord borrowRecord) {
         return null;
     }
-
-
 }
-

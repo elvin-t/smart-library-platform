@@ -61,9 +61,12 @@ public class BorrowRecord {
     }
 
     public boolean isOverdue() {
-        return BorrowStatus.BORROWED.equals(status)
-                && dueDate != null
-                && dueDate.isBefore(LocalDateTime.now());
+        return BorrowStatus.OVERDUE.equals(status)
+                || (
+                BorrowStatus.BORROWED.equals(status)
+                        && dueDate != null
+                        && dueDate.toLocalDate().isBefore(LocalDateTime.now().toLocalDate())
+        );
     }
 
     public void markReturned(LocalDateTime returnedAt,
@@ -78,6 +81,9 @@ public class BorrowRecord {
         if (this.fineAmount.compareTo(BigDecimal.ZERO) == 0) {
             this.finePaid = true;
             this.finePaidAt = returnedAt;
+        } else {
+            this.finePaid = false;
+            this.finePaidAt = null;
         }
     }
 

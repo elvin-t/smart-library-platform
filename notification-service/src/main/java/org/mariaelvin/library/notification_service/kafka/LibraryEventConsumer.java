@@ -19,7 +19,8 @@ public class LibraryEventConsumer {
 
     @KafkaListener(
             topics = "${app.kafka.topics.book-borrowed}",
-            groupId = "${spring.kafka.consumer.group-id}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "bookBorrowedKafkaListenerContainerFactory"
     )
     public void consumeBookBorrowedEvent(BookBorrowedEvent event) {
         try {
@@ -40,7 +41,8 @@ public class LibraryEventConsumer {
 
     @KafkaListener(
             topics = "${app.kafka.topics.book-returned}",
-            groupId = "${spring.kafka.consumer.group-id}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "bookReturnedKafkaListenerContainerFactory"
     )
     public void consumeBookReturnedEvent(BookReturnedEvent event) {
         try {
@@ -61,7 +63,8 @@ public class LibraryEventConsumer {
 
     @KafkaListener(
             topics = "${app.kafka.topics.fine-paid}",
-            groupId = "${spring.kafka.consumer.group-id}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            containerFactory = "finePaidKafkaListenerContainerFactory"
     )
     public void consumeFinePaidEvent(FinePaidEvent event) {
         try {
